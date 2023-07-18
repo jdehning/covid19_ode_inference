@@ -1,0 +1,8 @@
+numpy
+matplotlib
+pymc==5.*
+pytensor
+arviz
+numpyro
+ipywidgets
+

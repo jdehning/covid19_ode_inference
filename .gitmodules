@@ -1,0 +1,3 @@
+[submodule "pymc"]
+	path = pymc
+	url = git@github.com:jdehning/pymc.git
