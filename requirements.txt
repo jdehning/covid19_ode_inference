@@ -5,4 +5,5 @@ pytensor
 arviz
 numpyro
 ipywidgets
-
+graphviz
+diffrax
