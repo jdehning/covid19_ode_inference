@@ -22,7 +22,7 @@ def model_cases_seropositivity(
     sim_model=False,
     fact_subs=4,
     num_cps_reporting=3,
-    num_cps_R = 8,
+    num_cps_R=8,
 ):
     end_sim = max(t_cases_data)
 
@@ -89,7 +89,7 @@ def model_cases_seropositivity(
 
         I_0_raw = pm.LogNormal("I_0_raw", np.log(100), 2) if not sim_model else 100
         I_0 = pm.Deterministic("I_0", I_0_raw / eta_report[0])
-        #I_0 = I_0_raw
+        # I_0 = I_0_raw
         S_0 = N - I_0
         R_0 = 0
 
@@ -109,7 +109,7 @@ def model_cases_seropositivity(
             ts_solver=t_solve_ODE,
             ts_arg=t_solve_ODE,
             interp="linear",
-            solver=diffrax.Bosh3(), # a 3rd order method
+            solver=diffrax.Bosh3(),  # a 3rd order method
             adjoint=diffrax.RecursiveCheckpointAdjoint(checkpoints=len(t_solve_ODE)),
         )
         SIR_integrator = integrator.get_Op(
@@ -125,17 +125,19 @@ def model_cases_seropositivity(
         pm.Deterministic("R", R, dims=("t_solve_ODE",))
 
         new_pos_interp = cov19_ode.get_interpolation_op(
-            ts_in=t_solve_ODE[:-1]+0.5*np.diff(t_solve_ODE),
+            ts_in=t_solve_ODE[:-1] + 0.5 * np.diff(t_solve_ODE),
             ts_out=t_cases_data + 0.5,
             ret_gradients=False,
             method="cubic",
-            name="new_pos_interp"
+            name="new_pos_interp",
         )
 
-        #new_positive2,_ = new_pos_interp(t_cases_data + 1, y=-S)
-        #new_positive1,_ = new_pos_interp(t_cases_data, y=-S)
-        #new_positive = new_positive2 - new_positive1
-        new_positive,_=new_pos_interp(t_cases_data, y=-pt.diff(S)/np.diff(t_solve_ODE))
+        # new_positive2,_ = new_pos_interp(t_cases_data + 1, y=-S)
+        # new_positive1,_ = new_pos_interp(t_cases_data, y=-S)
+        # new_positive = new_positive2 - new_positive1
+        new_positive, _ = new_pos_interp(
+            t_cases_data, y=-pt.diff(S) / np.diff(t_solve_ODE)
+        )
 
         pm.Deterministic("new_positive", new_positive)
         new_reported = new_positive * eta_report
@@ -154,29 +156,33 @@ def model_cases_seropositivity(
             ts_out=t_seropos_data,
             ret_gradients=False,
             method="cubic",
-            name="sero_interp"
+            name="sero_interp",
         )
 
-        sero_at_data,_  = sero_interp(t_seropos_data, y=R,)
+        sero_at_data, _ = sero_interp(
+            t_seropos_data,
+            y=R,
+        )
         error_sero = pm.HalfNormal("error_sero", sigma=0.01)
         pm.Normal(
             "sero_data",
-            sero_at_data/N,
+            sero_at_data / N,
             error_sero,
             observed=seropos_data if not sim_model else None,
         )
 
-        sero_at_cases_interp =  cov19_ode.get_interpolation_op(
+        sero_at_cases_interp = cov19_ode.get_interpolation_op(
             ts_in=t_solve_ODE,
             ts_out=t_cases_data,
             ret_gradients=False,
             method="cubic",
-            name="sero_interp_at_cases"
+            name="sero_interp_at_cases",
         )
 
-        sero_at_cases,_ = sero_at_cases_interp(t_cases_data, y=R,)
-        pm.Deterministic("Sero_t", sero_at_cases/N)
-
-
+        sero_at_cases, _ = sero_at_cases_interp(
+            t_cases_data,
+            y=R,
+        )
+        pm.Deterministic("Sero_t", sero_at_cases / N)
 
     return model

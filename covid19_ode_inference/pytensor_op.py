@@ -18,8 +18,7 @@ def create_and_register_jax(
 ):
     """
     Returns a pytensor from a jax jittable function. It requires to define the output
-    types of the returned values as pytensor types. Beware that default values defined
-    in the function definition of jax_func won't be evaluated. A unique name should also
+    types of the returned values as pytensor types. A unique name should also
     be passed in case the name of the jax_func is identical to some other node. The
     design of this function is based on https://www.pymc-labs.io/blog-posts/jax-functions-in-pymc-3-quick-examples/
 
@@ -49,12 +48,14 @@ def create_and_register_jax(
     def vjp_sol_op_jax(*args):
         y0 = args[:-len_gz]
         gz = args[-len_gz:]
-        _, vjp_fn = jax.vjp(jax_func, *y0)
-        return vjp_fn(gz)
-
-    # def vjp_sol_op_jax(y0, gz):
-    #    _, vjp_fn = jax.vjp(jax_func, *y0)
-    #    return vjp_fn(gz)
+        print("vjp_sol_op_jax y0", y0)
+        if len(gz) == 1:
+            gz = gz[0]
+        _, vjp_fn = jax.vjp(sol_op.perform_jax, *y0)
+        if len(y0) == 1:
+            return vjp_fn(gz)[0]
+        else:
+            return vjp_fn(gz)
 
     jitted_vjp_sol_op_jax = jax.jit(vjp_sol_op_jax)
 
@@ -77,11 +78,12 @@ def create_and_register_jax(
 
             # Convert our inputs to symbolic variables
             all_inputs_flat, self.input_tree = tree_flatten(all_inputs)
-
+            print("SolOp.make_node input flat: ", all_inputs_flat)
             all_inputs_flat = [
                 pt.as_tensor_variable(inp).astype(input_dtype)
                 for inp in all_inputs_flat
             ]
+            self.num_inputs = len(all_inputs_flat)
 
             # Define our output variables
             outputs = [pt.as_tensor_variable(type()) for type in output_types]
@@ -94,13 +96,21 @@ def create_and_register_jax(
             """This function is called by the C backend, thus the numpy conversion"""
             inputs = tree_unflatten(self.input_tree, inputs)
             results = jitted_sol_op_jax(*inputs)
-            for i, _ in enumerate(output_types):
-                outputs[i][0] = np.array(results[i], output_types[i].dtype)
+            if len(output_types) > 1:
+                for i, _ in enumerate(output_types):
+                    outputs[i][0] = np.array(results[i], output_types[i].dtype)
+            else:
+                outputs[0][0] = np.array(results, output_types[0].dtype)
 
         def perform_jax(self, *inputs):
             inputs = tree_unflatten(self.input_tree, inputs)
             results = jitted_sol_op_jax(*inputs)
-            return results
+            if len(output_types) > 1:
+                return tuple(
+                    results
+                )  # Transform to tuple because jax makes a difference between tuple and list
+            else:
+                return results
 
         def grad(self, inputs, output_gradients):
             # If a output is not used, it is disconnected and doesn't have a gradient.
@@ -112,12 +122,10 @@ def create_and_register_jax(
             inputs_unflat = tree_unflatten(self.input_tree, inputs)
             result = self.vjp_sol_op(inputs_unflat, output_gradients)
 
-            # inputs_unflat = tree_unflatten(self.input_tree, inputs)
-            # result = jitted_vjp_sol_op_jax(inputs, output_gradients)
-            # results, _ = tree_flatten(result)
-            results = [result[i] for i, _ in enumerate(inputs)]
-            # results = tree_unflatten(self.input_tree, results)
-            return tuple(results)
+            if self.num_inputs > 1:
+                return result
+            else:
+                return (result,)  # Pytensor requires a tuple here
 
     # vector-jacobian product Op
     class VJPSolOp(Op):
@@ -126,30 +134,44 @@ def create_and_register_jax(
 
         def make_node(self, y0, gz):
             y0_flat, self.input_tree_def = tree_flatten(y0)
+
             inputs = [
                 pt.as_tensor_variable(
                     _y,
                 ).astype(input_dtype)
                 for _y in y0_flat
-            ] + list(gz)
+            ] + [
+                pt.as_tensor_variable(
+                    _gz,
+                )
+                for _gz in gz
+            ]
 
-            inputs_unflat = tuple(list(y0) + list(gz))
-            _, self.full_input_tree_def = tree_flatten(inputs_unflat)
+            # inputs_unflat = tuple(list(y0) + list(gz))
+            # _, self.full_input_tree_def = tree_flatten(inputs_unflat)
 
             outputs = [input.type() for input in y0_flat]
+            self.num_outputs = len(outputs)
             return Apply(self, inputs, outputs)
 
         def perform(self, node, inputs, outputs):
-            inputs = tree_unflatten(self.full_input_tree_def, inputs)
+            # inputs = tree_unflatten(self.full_input_tree_def, inputs)
+            print("VJPSolOp.perform inputs: ", inputs)
             results = jitted_vjp_sol_op_jax(*inputs)
             results, _ = tree_flatten(results)
-            for i, result in enumerate(results):
-                outputs[i][0] = np.array(result, input_dtype)
+            if self.num_outputs > 1:
+                for i, result in enumerate(results):
+                    outputs[i][0] = np.array(result, input_dtype)
+            else:
+                outputs[0][0] = np.array(results, input_dtype)
 
         def perform_jax(self, *inputs):
-            inputs = tree_unflatten(self.full_input_tree_def, inputs)
+            # inputs = tree_unflatten(self.full_input_tree_def, inputs)
+            print("VJPSolOp.perform_jax inputs: ", inputs)
             results = jitted_vjp_sol_op_jax(*inputs)
             results, _ = tree_flatten(results)
+            if self.num_outputs == 1:
+                results = results[0]
             return results
 
     if name is None:
@@ -163,7 +185,6 @@ def create_and_register_jax(
     )
 
     sol_op = SolOp()
-    # vjp_sol_op = VJPSolOp()
 
     @jax_funcify.register(SolOp)
     def sol_op_jax_funcify(op, **kwargs):

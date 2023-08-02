@@ -7,3 +7,9 @@ from . import tools
 from .tools import hierarchical_priors
 from .slow_modulation import priors_for_cps
 from .compartmental_models import get_interpolation_op
+from . import examples
+from . import tools
+
+from .tools import hierarchical_priors
+from .slow_modulation import priors_for_cps
+from .compartmental_models import get_interpolation_op

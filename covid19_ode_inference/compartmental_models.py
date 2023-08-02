@@ -156,13 +156,19 @@ def get_interpolation_op(ts_in, ts_out, method, name, ret_gradients=False):
     def interpolator(ts_out, y):
         interp = interpolation(ts_in, y, method)
         if ret_gradients:
-            return interp.derivative(ts_out),1.
+            return interp.derivative(ts_out), 1.0
         else:
-            return interp.evaluate(ts_out),1.
+            return interp.evaluate(ts_out), 1.0
 
     interpolator_op = create_and_register_jax(
         interpolator,
-        output_types=[TensorType(dtype="float64", shape=(len(ts_out),)), TensorType(dtype="float64", shape=(),)],
+        output_types=[
+            TensorType(dtype="float64", shape=(len(ts_out),)),
+            TensorType(
+                dtype="float64",
+                shape=(),
+            ),
+        ],
         name=name,
     )
 
