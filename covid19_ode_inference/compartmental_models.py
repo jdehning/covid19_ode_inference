@@ -65,21 +65,26 @@ class CompModelsIntegrator:
         self,
         ts_out,
         t_0,
-        dt,
+        ts_solver=None,
         ts_arg=None,
         interp="cubic",
         solver=diffrax.Tsit5(),
         t_1=None,
+        **kwargs,
     ):
         self.ts_out = ts_out
         self.t_0 = t_0
         if t_1 is None:
             t_1 = max(self.ts_out)
         self.t_1 = float(t_1)
-        self.dt = dt
+        if ts_solver is None:
+            self.ts_solver = self.ts_out
+        else:
+            self.ts_solver = ts_solver
         self.ts_arg = ts_arg
         self.interp = interp
         self.solver = solver
+        self.kwargs_solver = kwargs
 
     def get_func(self, ODE):
         def integrator(y0, arg_t=None, constant_args=None):
@@ -105,10 +110,12 @@ class CompModelsIntegrator:
                 self.solver,
                 self.t_0,
                 self.t_1,
-                self.dt,
-                tuple(y0),
+                dt0=None,
+                stepsize_controller=diffrax.StepTo(ts=self.ts_solver),
+                y0=tuple(y0),
                 args=args,
                 saveat=saveat,
+                **self.kwargs_solver,
                 # adjoint=diffrax.BacksolveAdjoint(),
             )
 
@@ -133,17 +140,33 @@ class CompModelsIntegrator:
 
 
 def interpolation(ts, x, method):
-    if ts is not None:
-        if method == "cubic":
-            coeffs = diffrax.backward_hermite_coefficients(ts, x)
-            interp = diffrax.CubicInterpolation(ts, coeffs)
-        elif method == "linear":
-            interp = diffrax.LinearInterpolation(ts, x)
-        else:
-            raise RuntimeError(
-                f'Interpoletion method {self.interp} not known, possibilities are "cubic" or "linear"'
-            )
+    if method == "cubic":
+        coeffs = diffrax.backward_hermite_coefficients(ts, x)
+        interp = diffrax.CubicInterpolation(ts, coeffs)
+    elif method == "linear":
+        interp = diffrax.LinearInterpolation(ts, x)
+    else:
+        raise RuntimeError(
+            f'Interpoletion method {method} not known, possibilities are "cubic" or "linear"'
+        )
     return interp
+
+
+def get_interpolation_op(ts_in, ts_out, method, name, ret_gradients=False):
+    def interpolator(ts_out, y):
+        interp = interpolation(ts_in, y, method)
+        if ret_gradients:
+            return interp.derivative(ts_out),1.
+        else:
+            return interp.evaluate(ts_out),1.
+
+    interpolator_op = create_and_register_jax(
+        interpolator,
+        output_types=[TensorType(dtype="float64", shape=(len(ts_out),)), TensorType(dtype="float64", shape=(),)],
+        name=name,
+    )
+
+    return interpolator_op
 
 
 def comp_models_integrator(
