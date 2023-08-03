@@ -10,7 +10,7 @@ from .tools import hierarchical_priors
 
 
 def sigmoidal_changepoints(
-    ts_out, positions_cp, magnitudes_cp, durations_cp, reorder_cps=True
+    ts_out, positions_cp, magnitudes_cp, durations_cp, reorder_cps=False
 ):
     """
 
@@ -24,18 +24,18 @@ def sigmoidal_changepoints(
         magnitude of the changepoints, shape: (num_cps, further dims...)
     durations: nd-array
         magnitude of the changepoints, shape: (num_cps, further dims...)
-    reorder_cps: bool, default=True
+    reorder_cps: bool, default=False
         reorder changepoints such that their timepoints are linearly increasing
     Returns
     -------
         nd-array, shape: (time, further dims...)
 
     """
-    # if reorder_cps:
-    #    order = pt.argsort(time_cp, axis=0)
-    #    time_cp = time_cp[order, ...]
-    #    magnitude = time_cp[order, ...]
-    #    durations = time_cp[order, ...]
+    if reorder_cps:
+        order = pt.argsort(positions_cp, axis=0)
+        positions_cp = positions_cp[order, ...]
+        magnitudes_cp = magnitudes_cp[order, ...]
+        durations_cp = durations_cp[order, ...]
 
     # add necessary empty dimensions to time axis
     ts_out = np.expand_dims(ts_out, axis=tuple(range(1, max(1, positions_cp.ndim) + 1)))
