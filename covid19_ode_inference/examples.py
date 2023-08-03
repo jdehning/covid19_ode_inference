@@ -108,7 +108,7 @@ def model_cases_seropositivity(
             t_0=min(t_solve_ODE),
             ts_solver=t_solve_ODE,
             ts_arg=t_solve_ODE,
-            interp="linear",
+            interp="cubic",
             solver=diffrax.Bosh3(),  # a 3rd order method
             adjoint=diffrax.RecursiveCheckpointAdjoint(checkpoints=len(t_solve_ODE)),
         )
@@ -124,19 +124,12 @@ def model_cases_seropositivity(
         pm.Deterministic("I", I, dims=("t_solve_ODE",))
         pm.Deterministic("R", R, dims=("t_solve_ODE",))
 
-        new_pos_interp = cov19_ode.get_interpolation_op(
+        new_positive = cov19_ode.interpolate(
             ts_in=t_solve_ODE[:-1] + 0.5 * np.diff(t_solve_ODE),
-            ts_out=t_cases_data + 0.5,
+            ts_out=t_cases_data,
+            y=-pt.diff(S) / np.diff(t_solve_ODE),
             ret_gradients=False,
             method="cubic",
-            name="new_pos_interp",
-        )
-
-        # new_positive2,_ = new_pos_interp(t_cases_data + 1, y=-S)
-        # new_positive1,_ = new_pos_interp(t_cases_data, y=-S)
-        # new_positive = new_positive2 - new_positive1
-        new_positive, _ = new_pos_interp(
-            t_cases_data, y=-pt.diff(S) / np.diff(t_solve_ODE)
         )
 
         pm.Deterministic("new_positive", new_positive)
@@ -151,18 +144,14 @@ def model_cases_seropositivity(
             observed=cases_data if not sim_model else None,
         )
 
-        sero_interp = cov19_ode.get_interpolation_op(
+        sero_at_data = cov19_ode.interpolate(
             ts_in=t_solve_ODE,
             ts_out=t_seropos_data,
+            y=R,
             ret_gradients=False,
             method="cubic",
-            name="sero_interp",
         )
 
-        sero_at_data, _ = sero_interp(
-            t_seropos_data,
-            y=R,
-        )
         error_sero = pm.HalfNormal("error_sero", sigma=0.01)
         pm.Normal(
             "sero_data",
@@ -171,18 +160,14 @@ def model_cases_seropositivity(
             observed=seropos_data if not sim_model else None,
         )
 
-        sero_at_cases_interp = cov19_ode.get_interpolation_op(
+        sero_at_cases = cov19_ode.interpolate(
             ts_in=t_solve_ODE,
             ts_out=t_cases_data,
+            y=R,
             ret_gradients=False,
             method="cubic",
-            name="sero_interp_at_cases",
         )
 
-        sero_at_cases, _ = sero_at_cases_interp(
-            t_cases_data,
-            y=R,
-        )
         pm.Deterministic("Sero_t", sero_at_cases / N)
 
     return model

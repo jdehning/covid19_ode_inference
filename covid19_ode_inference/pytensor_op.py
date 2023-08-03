@@ -48,7 +48,6 @@ def create_and_register_jax(
     def vjp_sol_op_jax(*args):
         y0 = args[:-len_gz]
         gz = args[-len_gz:]
-        print("vjp_sol_op_jax y0", y0)
         if len(gz) == 1:
             gz = gz[0]
         _, vjp_fn = jax.vjp(sol_op.perform_jax, *y0)
@@ -78,7 +77,6 @@ def create_and_register_jax(
 
             # Convert our inputs to symbolic variables
             all_inputs_flat, self.input_tree = tree_flatten(all_inputs)
-            print("SolOp.make_node input flat: ", all_inputs_flat)
             all_inputs_flat = [
                 pt.as_tensor_variable(inp).astype(input_dtype)
                 for inp in all_inputs_flat
@@ -156,7 +154,6 @@ def create_and_register_jax(
 
         def perform(self, node, inputs, outputs):
             # inputs = tree_unflatten(self.full_input_tree_def, inputs)
-            print("VJPSolOp.perform inputs: ", inputs)
             results = jitted_vjp_sol_op_jax(*inputs)
             results, _ = tree_flatten(results)
             if self.num_outputs > 1:
@@ -167,7 +164,6 @@ def create_and_register_jax(
 
         def perform_jax(self, *inputs):
             # inputs = tree_unflatten(self.full_input_tree_def, inputs)
-            print("VJPSolOp.perform_jax inputs: ", inputs)
             results = jitted_vjp_sol_op_jax(*inputs)
             results, _ = tree_flatten(results)
             if self.num_outputs == 1:
@@ -179,9 +175,9 @@ def create_and_register_jax(
     SolOp.__name__ = name
     SolOp.__qualname__ = ".".join(SolOp.__qualname__.split(".")[:-1] + [name])
 
-    VJPSolOp.__name__ = "VJP" + name
+    VJPSolOp.__name__ = "VJP_" + name
     VJPSolOp.__qualname__ = ".".join(
-        VJPSolOp.__qualname__.split(".")[:-1] + ["VJP" + name]
+        VJPSolOp.__qualname__.split(".")[:-1] + ["VJP_" + name]
     )
 
     sol_op = SolOp()
