@@ -98,8 +98,8 @@ def model_cases_seropositivity(
         def SIR(t, y, args):
             S, I, R = y
             β, (γ, N) = args
-            dS = -β.evaluate(t) * I * S / N
-            dI = β.evaluate(t) * I * S / N - γ * I
+            dS = -β(t) * I * S / N
+            dI = β(t) * I * S / N - γ * I
             dR = γ * I
             return dS, dI, dR
 

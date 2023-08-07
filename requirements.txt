@@ -7,3 +7,5 @@ numpyro
 ipywidgets
 graphviz
 diffrax
+optax
+jaxopt
