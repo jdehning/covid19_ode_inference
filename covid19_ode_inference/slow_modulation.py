@@ -13,6 +13,10 @@ def sigmoidal_changepoints(
     ts_out, positions_cp, magnitudes_cp, durations_cp, reorder_cps=False
 ):
     """
+    Modulation of a time series by sigmoidal changepoints. The changepoints are defined
+    by their position, magnitude and duration. The resulting equation is:
+    $$ f(t) = \sum_{i=1}^{num_cps} \frac{magnitudes[i]}{1 + exp(-4 * slope[i] * (t - positions[i]))} $$
+    where $slope[i] = magnitudes[i] / durations[i]$
 
     Parameters
     ----------
@@ -59,6 +63,41 @@ def priors_for_cps(
     sigma_magnitude_fix=None,
     model=None,
 ):
+    """
+    Create priors for changepoints. Their positions are uniformly distributed between
+    the first and last timepoint. The magnitudes are sampled from a hierarchical prior
+    with a beta distribution. The durations are sampled from a normal distribution with
+    mean equal to the mean distance between changepoints and standard deviation equal to
+    the standard deviation of the distance between changepoints.
+
+    Parameters
+    ----------
+    cp_dim : str
+        dimension of the pm.Model for the changepoints. Define it by passing
+        coords={cp_dim: np.arange(num_cps)} to pm.Model at creation. The length of this
+        dimension determines the number of changepoints.
+    time_dim : str
+        dimension of the pm.Model for the time.
+    name_positions : str
+        name under which the positions of the changepoints are stored in pm.Model
+    name_magnitudes : str
+        name under which the magnitudes of the changepoints are stored in pm.Model
+    name_durations : str
+        name under which the durations of the changepoints are stored in pm.Model
+    beta_magnitude : float, default=1
+        beta parameter of the hierarchical prior for the magnitudes
+    sigma_magnitude_fix : float, default=None
+        if not None, the standard deviation from which the magnitudes are sampled is fixed
+    model : pm.Model, default=None
+        pm.Model in which the priors are created. If None, the pm.Model is taken from the
+        the context.
+
+    Returns
+    -------
+    positions, magnitudes, durations : pm.Variable
+        pm.Variables for the positions, magnitudes and durations of the changepoints
+
+    """
     model = pm.modelcontext(model)
 
     time_arr = model.coords[time_dim]

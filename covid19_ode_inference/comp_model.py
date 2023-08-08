@@ -6,14 +6,36 @@ from covid19_ode_inference.pytensor_op import create_and_register_jax
 
 
 def SIR(t, y, args):
+    """
+    Differential equations of an SIR model.
+    Parameters
+    ----------
+    t: float
+        time variable
+    y: dict
+        dictionary of compartments. Has to include keys "S", "I", "R". The value of "S"
+        is the number of susceptible individuals, "I" is the number of infected
+        individuals and "R" is the number of recovered individuals.
+    args: tuple
+        tuple of arguments. The first argument is the function β(t) that describes the
+        infection rate. The second argument is a dictionary of constant arguments. It
+        has to include the key "gamma" which is the recovery rate and the key "N" which
+        is the total population size.
+
+    Returns
+    -------
+    dy: dict
+        dictionary of derivatives with keys "S", "I", "R".
+
+    """
     β, const_arg = args
     γ = const_arg["gamma"]
     N = const_arg["N"]
     dS = -β(t) * y["I"] * y["S"] / N
     dI = β(t) * y["I"] * y["S"] / N - γ * y["I"]
     dR = γ * y["I"]
-
-    return {"S": dS, "I": dI, "R": dR}
+    dy = {"S": dS, "I": dI, "R": dR}
+    return dy
 
 
 def Erlang_SEIR(t, y, args):
@@ -193,9 +215,29 @@ class CompModel:
 
     @property
     def dy(self):
+        """
+        Returns the derivative of the compartments. This is the function that can be used
+        in an ODE.
+        Returns
+        -------
+        dComp: dict
+        """
         return self.dComp
 
     def view_graph(self, on_display=True):
+        """
+        Displays a graph of the compartmental model. Requires graphviz to be installed.
+        Parameters
+        ----------
+        on_display : bool
+            If True, the graph is displayed in the notebook, otherwise it is saved as a
+            pdf in the current folder and opened with the default pdf viewer.
+
+        Returns
+        -------
+        None
+
+        """
         if on_display:
             try:
                 from IPython.display import display
@@ -209,16 +251,23 @@ class CompModel:
 
 def delayed_copy(initial_var, delayed_vars, tau_delay):
     """
-    Delayed copy of a compartment. The delay has the form of an Erlang kernel with shape
-    parameter len(delayed_vars)
+    Returns the derivative to model the delayed copy of a compartment. The delay has the
+    form of an Erlang kernel with shape parameter len(delayed_vars).
     Parameters
     ----------
-    initial_var
-    delayed_vars
-    tau_delay
+    initial_var : float or ndarray
+        The compartment that is copied
+    delayed_vars : list of floats or list of ndarrays
+        List of compartments that are delayed copies of initial_var, the last element
+        is the compartment which has the same total content as initial_var over time, but
+        is delayed by tau_delay.
+    tau_delay : float or ndarray
+        The mean delay of the copy.
 
     Returns
     -------
+    d_delayed_vars : list of floats or list of ndarrays
+        The derivatives of the delayed compartments
 
     """
 
@@ -237,8 +286,34 @@ def delayed_copy(initial_var, delayed_vars, tau_delay):
 
 class CompModelsIntegrator:
     """
-    Creates an integrator for compartmental models. If called with an ODE as arguments,
-    it returns
+    Creates an integrator for compartmental models. The integrator is a function that
+    takes as input a function that returns the derivatives of the variables of the system
+    of differential equations, and returns a function that solves the system of
+    differential equations. For the initilization of the integrator object, the timesteps
+    of the solver and the output have to be specified.
+
+    Parameters
+    ----------
+    ts_out : array-like
+        The timesteps at which the output is returned.
+    t_0 : float
+        The initial time of the integration
+    ts_solver : array-like or None
+        The timesteps at which the solver will be called. If None, it is set to ts_out.
+    ts_arg : array-like or None
+        The timesteps at which the time-dependent argument of the system of differential
+        equations are given. If None, it is set to ts_solver.
+    interp : str
+        The interpolation method used to interpolate the time-dependent argument of the
+        system of differential equations. Can be "cubic" or "linear".
+    solver : diffrax.AbstractStepSizeController
+        The solver used to integrate the system of differential equations. Default is
+        diffrax.Tsit5(), a 5th order Runge-Kutta method.
+    t_1 : float or None
+        The final time of the integration. If None, it is set to max(ts_out).
+    **kwargs
+        Arguments passed to the solver, see diffrax.diffeqsolve for more details.
+
     """
 
     def __init__(
@@ -269,6 +344,32 @@ class CompModelsIntegrator:
         self.kwargs_solver = kwargs
 
     def get_func(self, ODE):
+        """
+        Returns a function that solves the system of differential equations.
+        Parameters
+        ----------
+        ODE : function(t, y, args)
+            A function that returns the derivatives of the variables of the system of
+            differential equations. The function has to take as input the time t, the
+            variables y and the arguments args of the system of differential equations.
+            t is a float, y is a list or dict of floats or ndarrays, or in general, a
+            pytree, see jax.tree_util for more details. The return value of the function
+            has to be a pytree/list/dict with the same structure as y.
+
+        Returns
+        -------
+        integrator : function(y0, arg_t=None, constant_args=None)
+            A function that solves the system of differential equations and returns the
+            output at the specified timesteps. The function takes as input y0 the initial
+            values of the variables of the system of differential equations, the
+            time-dependent argument of the system of differential equations arg_t, and
+            the constant arguments of the system of differential equations. t, y0 and
+            (arg_t, constant_args) are passed to the ODE function as its three arguments.
+            If arg_t is None, only constant_args are passed to the ODE function and
+            vice versa, without being in a tuple.
+
+        """
+
         def integrator(y0, arg_t=None, constant_args=None):
             if arg_t is not None:
                 if not callable(arg_t):
@@ -310,6 +411,19 @@ class CompModelsIntegrator:
         return integrator
 
     def get_Op(self, ODE, name=None, return_shapes=((),)):
+        """
+        Same as get_func, but returns a pymc operator that can be used in a pymc model.
+
+        Parameters
+        ----------
+        ODE
+        name
+        return_shapes
+
+        Returns
+        -------
+
+        """
         integrator = self.get_func(ODE)
 
         pytensor_op = create_and_register_jax(
@@ -326,6 +440,25 @@ class CompModelsIntegrator:
 
 
 def interpolation_func(ts, x, method="cubic"):
+    """
+    Returns a diffrax-interpolation function that can be used to interpolate the time-dependent
+    variable.
+    Parameters
+    ----------
+    ts : array-like
+        The timesteps at which the time-dependent variable is given.
+    x : array-like
+        The time-dependent variable.
+    method
+        The interpolation method used. Can be "cubic" or "linear".
+
+    Returns
+    -------
+    interp : diffrax.CubicInterpolation or diffrax.LinearInterpolation
+        The interpolation function. Call interp.evaluate(t) to evaluate the interpolated
+        variable at time t. t can be a float or an array-like.
+
+    """
     if method == "cubic":
         coeffs = diffrax.backward_hermite_coefficients(ts, x)
         interp = diffrax.CubicInterpolation(ts, coeffs)
@@ -339,6 +472,29 @@ def interpolation_func(ts, x, method="cubic"):
 
 
 def interpolate(ts_in, ts_out, y, method="cubic", ret_gradients=False):
+    """
+    Interpolates the time-dependent variable y at the timesteps ts_out.
+    Parameters
+    ----------
+    ts_in : array-like
+        The timesteps at which the time-dependent variable is given.
+    ts_out : array-like
+        The timesteps at which the time-dependent variable should be interpolated.
+    y : array-like
+        The time-dependent variable.
+    method : str
+        The interpolation method used. Can be "cubic" or "linear".
+    ret_gradients : bool
+        If True, the gradients of the interpolated variable are returned. Default is
+        False.
+
+    Returns
+    -------
+    y_interp : array-like
+        The interpolated variable at the timesteps ts_out.
+
+    """
+
     def interpolator(ts_out, y):
         interp = interpolation_func(ts_in, y, method)
         if ret_gradients:
