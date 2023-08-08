@@ -103,7 +103,7 @@ def model_cases_seropositivity(
             dR = γ * I
             return dS, dI, dR
 
-        integrator = cov19_ode.compartmental_models.CompModelsIntegrator(
+        integrator = cov19_ode.CompModelsIntegrator(
             ts_out=t_solve_ODE,
             t_0=min(t_solve_ODE),
             ts_solver=t_solve_ODE,

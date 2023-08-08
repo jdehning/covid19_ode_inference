@@ -190,7 +190,7 @@ class CompModel:
         flow: float or ndarray
             flow to add between compartments, is multiplied by start_comp, so it should
             be broadcastable whith it.
-        label: str
+        label: str, optional
             label of the edge between the compartments that will be used when displaying
             a graph of the compartmental model.
 
@@ -343,7 +343,7 @@ class CompModelsIntegrator:
         self.solver = solver
         self.kwargs_solver = kwargs
 
-    def get_func(self, ODE):
+    def get_func(self, ODE, list_keys_to_return=None):
         """
         Returns a function that solves the system of differential equations.
         Parameters
@@ -355,6 +355,11 @@ class CompModelsIntegrator:
             t is a float, y is a list or dict of floats or ndarrays, or in general, a
             pytree, see jax.tree_util for more details. The return value of the function
             has to be a pytree/list/dict with the same structure as y.
+        list_keys_to_return : list of str or None, default is None
+            The keys of the variables of the system of differential equations that are
+            returned by the integrator. If set, the integrator returns a list of the
+            variables of the system of differential equations in the order of the keys.
+            If None, the output is returned as is.
 
         Returns
         -------
@@ -405,26 +410,59 @@ class CompModelsIntegrator:
                 **self.kwargs_solver,
                 # adjoint=diffrax.BacksolveAdjoint(),
             )
-
-            return sol.ys
+            if list_keys_to_return is None:
+                return sol.ys
+            else:
+                return [sol.ys[key] for key in list_keys_to_return]
 
         return integrator
 
-    def get_Op(self, ODE, name=None, return_shapes=((),)):
+    def get_Op(
+        self,
+        ODE,
+        return_shapes=((),),
+        list_keys_to_return=None,
+        name=None,
+    ):
         """
-        Same as get_func, but returns a pymc operator that can be used in a pymc model.
+        Same as get_func, but returns a pytensor operator that can be used in a pymc model.
+        Beware that for this operator the output of the integration of the ODE can only
+        be a single or a list variables. If the output is a dict, set list_keys_to_return
+        to specify the keys of the variables that are returned by the integrator. These
+        return values aren't allowed to be further nested.
 
         Parameters
         ----------
-        ODE
-        name
-        return_shapes
+        ODE : function(t, y, args)
+            A function that returns the derivatives of the variables of the system of
+            differential equations. The function has to take as input the time t, the
+            variables y and the arguments args of the system of differential equations.
+            t is a float, y is a list or dict of floats or ndarrays, or in general, a
+            pytree, see jax.tree_util for more details. The return value of the function
+            has to be a pytree/list/dict with the same structure as y.
+        return_shapes : tuple of tuples, default is ((),)
+            The shapes (except the time dimension) of the variables of the system of
+            differential equations that are returned by the integrator. If
+            list_keys_to_return is None, the shapes have to be given in the same order
+            as the variables are returned by the integrator. If list_keys_to_return is
+            not None, the shapes have to be given in the same order as the keys in
+            list_keys_to_return. The default ((),) means a single variable with only a
+            time dimension is returned.
+        list_keys_to_return : list of str or None, default is None
+            The keys of the variables of the system of differential equations that will
+            be chosen to be returned by the integrator. Necessary if the ODE returns a
+            dict, as pytensor only accepts single outputs or a list of outputs.
+            If None, the output is returned as is.
+        name :
+            The name under which the operator is registered in pymc.
 
         Returns
         -------
+        pytensor_op : pytensor.graph.Op
+            A pytensor operator that can be used in a pymc model.
 
         """
-        integrator = self.get_func(ODE)
+        integrator = self.get_func(ODE, list_keys_to_return=list_keys_to_return)
 
         pytensor_op = create_and_register_jax(
             integrator,
