@@ -14,4 +14,6 @@ from .comp_model import (
     Erlang_SEIR,
     Erlang_SEIRS,
     erlang_kernel,
+    delayed_copy,
+    CompModel,
 )

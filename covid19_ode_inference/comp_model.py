@@ -1,8 +1,6 @@
-import functools
-
 import diffrax
-import jax.numpy as jnp
 from pytensor.tensor.type import TensorType
+import graphviz
 
 from covid19_ode_inference.pytensor_op import create_and_register_jax
 
@@ -134,6 +132,107 @@ def erlang_kernel(inflow, Vars, rate):
             dVars[i] = dVars[i] + m * rate * Vars[i - 1]
     out_flow = m * rate * Vars[-1]
     return dVars, out_flow
+
+
+class CompModel:
+    """
+    Class to build a compartmental model. The model is built by adding flows between
+    compartments. The model is then compiled into a function that can be used in an ODE.
+
+    Parameters
+    ----------
+    Comp_dict: dict
+        Dictionary of compartments. Keys are the names of the compartments and values
+        are floats or ndarrays that represent their value.
+    """
+
+    def __init__(self, Comp_dict):
+        self.Comp = Comp_dict
+        self.dComp = {}
+        self.graph = graphviz.Digraph("comp_model")
+        for key in self.Comp.keys():
+            self.graph.node(key)
+        self.graph.attr(rankdir="LR")
+
+    def flow(self, start_comp, end_comp, flow, label=None):
+        """
+        Add a flow from start_comp to end_comp with rate flow.
+
+        Parameters
+        ----------
+        start_comp: str or list
+            Key of the start compartment. Can also be a list of keys in which case an
+            identical flow is added from each compartment of the list to end_com
+        end_comp: str
+            Key of the end compartment
+        flow: float or ndarray
+            flow to add between compartments, is multiplied by start_comp, so it should
+            be broadcastable whith it.
+        label: str
+            label of the edge between the compartments that will be used when displaying
+            a graph of the compartmental model.
+
+        Returns
+        -------
+        None
+        """
+        if isinstance(start_comp, str):
+            start_comp_list = [start_comp]
+        else:
+            start_comp_list = start_comp
+        for start_comp in start_comp_list:
+            if not start_comp in self.dComp.keys():
+                self.dComp[start_comp] = 0
+            if not end_comp in self.dComp.keys():
+                self.dComp[end_comp] = 0
+            self.dComp[start_comp] = (
+                self.dComp[start_comp] - flow * self.Comp[start_comp]
+            )
+            self.dComp[end_comp] = self.dComp[end_comp] + flow * self.Comp[start_comp]
+            self.graph.edge(start_comp, end_comp, label=label)
+
+    @property
+    def dy(self):
+        return self.dComp
+
+    def view_graph(self, on_display=True):
+        if on_display:
+            try:
+                from IPython.display import display
+
+                display(self.graph)
+            except:
+                self.graph.view()
+        else:
+            self.graph.view()
+
+
+def delayed_copy(initial_var, delayed_vars, tau_delay):
+    """
+    Delayed copy of a compartment. The delay has the form of an Erlang kernel with shape
+    parameter len(delayed_vars)
+    Parameters
+    ----------
+    initial_var
+    delayed_vars
+    tau_delay
+
+    Returns
+    -------
+
+    """
+
+    shape = len(delayed_vars)
+    inflow = initial_var / tau_delay * shape
+    if shape == 1:
+        d_delayed_vars = []
+        d_delayed_vars_last = inflow
+    elif shape > 1:
+        d_delayed_vars, outflow = erlang_kernel(
+            inflow, delayed_vars[:-1], 1 / tau_delay * shape
+        )
+        d_delayed_vars_last = outflow
+    return d_delayed_vars + [d_delayed_vars_last]
 
 
 class CompModelsIntegrator:
