@@ -43,7 +43,7 @@ def sigmoidal_changepoints(
 
     # add necessary empty dimensions to time axis
     ts_out = np.expand_dims(ts_out, axis=tuple(range(1, max(1, positions_cp.ndim) + 1)))
-    slope_cp = pt.abs(magnitudes_cp) / durations_cp
+    slope_cp = 1 / durations_cp
     modulation_t = (
         pt.sigmoid((ts_out - positions_cp) * slope_cp * 4) * magnitudes_cp
     )  # 4*slope_cp because the derivative of the sigmoid at zero is 1/4, we want to set it to slope_cp
